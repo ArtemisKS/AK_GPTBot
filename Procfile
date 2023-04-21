@@ -1,1 +1,1 @@
-python akgpt_bot.py
+worker: python akgpt_bot.py
