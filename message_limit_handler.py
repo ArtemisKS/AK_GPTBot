@@ -29,6 +29,9 @@ class MessageLimitHandler:
         return chat_id in self.message_limits
 
     def register_message(self, chat_id):
+        if not self.has_limit(chat_id):
+            return
+        
         current_time = time.time()
 
         if chat_id not in self.sent_messages:

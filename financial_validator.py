@@ -13,6 +13,9 @@ class FinancialValidator:
 
     def set_limit(self, chat_id, limit):
         self.dollar_limits[chat_id] = limit
+        
+    def has_limit(self, chat_id):
+        return chat_id in self.dollar_limits
 
     def remove_limit(self, chat_id):
         self._remove_data(chat_id, self.dollar_limits)
@@ -27,6 +30,9 @@ class FinancialValidator:
         return self.dollar_limits.get(chat_id, None)
 
     def register_tokens(self, chat_id, tokens):
+        if not self.has_limit(chat_id):
+            return
+        
         current_time = time.time()
 
         self._initialize_chat_data(chat_id, self.spent_tokens, 0)
@@ -74,9 +80,6 @@ class FinancialValidator:
         if limit is not None:
             return max(limit - spent_amount, 0)
         return float("inf")
-    
-    def has_limit(self, chat_id):
-        return chat_id in self.dollar_limits
 
     def can_send_message(self, chat_id):
         if not self.has_limit(chat_id):

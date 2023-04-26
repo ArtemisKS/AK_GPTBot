@@ -1,10 +1,9 @@
-import threading
 import openai
 import logging
-from telegram import Update, ReplyKeyboardRemove
+import time
+from telegram import Update, ReplyKeyboardRemove, BotCommandScopeDefault, BotCommandScopeAllChatAdministrators, Bot, BotCommand
 from telegram.ext import (
     Updater,
-    CommandHandler,
     CallbackQueryHandler,
     MessageHandler,
     Filters,
@@ -13,7 +12,8 @@ from telegram.ext import (
 
 from financial_validator import FinancialValidator
 from message_limit_handler import MessageLimitHandler
-from admin_menu_manager import AdminMenuManager
+from input_handler import InputHandler
+from localization import loc, translator
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -22,107 +22,112 @@ class GPTBot:
         self.TELEGRAM_API_KEY = telegram_api_key
         self.GPT_API_KEY = gpt_api_key
 
+        self.bot = Bot(token=telegram_api_key)
         self.updater = Updater(self.TELEGRAM_API_KEY)
-        self.financial_validator = FinancialValidator()
-        self.message_limit_handler = MessageLimitHandler()
-        self.admin_menu_manager = AdminMenuManager(self.message_limit_handler, self.financial_validator)
+        self.input_handler = InputHandler(MessageLimitHandler(), FinancialValidator(), self.updater)
         
         # Initialize OpenAI API
         openai.api_key = self.GPT_API_KEY
+        
+        self.non_admin_commands = ["start", "gpt", "help"]
+        self.admin_commands = self.non_admin_commands + ["adminmenu"]
+        
+        self.setup_commands_methods()
+        
+    def handle_command(self, update: Update, context: CallbackContext):
+        command_with_args = update.message.text.split()
+        full_command = command_with_args[0][1:]  # Extract the command without the leading '/'
+        command = full_command.split('@')[0]  # Remove the bot's username if it's present
+        if command in self.commands_methods:
+            language_code = self.get_user_language(update)
+            
+            new_language = not translator.is_current_lang(language_code)
+            if new_language:
+                chat_id = update.effective_chat.id
+                self.input_handler.start_typing(context, chat_id)
+                
+            translator.change_language(language_code)
+            
+            if new_language:
+                self.update_commands()
+            
+            self.input_handler.stop_typing()
+            
+            if command == 'gpt':
+                # Extract the arguments
+                args = command_with_args[1:]
+                self.commands_methods[command](update, context, args)
+            else:
+                self.commands_methods[command](update, context)
+        else:
+            self.unknown_command(update, context)
+
 
     def start(self, update: Update, context: CallbackContext):
-        update.message.reply_text(
-            'Hello! I am a GPT-4 bot. Type /gpt followed by your question!',
-            reply_markup=ReplyKeyboardRemove()
-        )
-
-    def send_typing_action(self, chat_id, stop_typing_event, context):
-        while not stop_typing_event.is_set():
-            context.bot.send_chat_action(chat_id=chat_id, action='typing')
-            stop_typing_event.wait(5)
-
-    def gpt(self, update: Update, context: CallbackContext):
-        if len(context.args) > 0:
-            chat_id = update.effective_chat.id
-
-            if not self.financial_validator.can_send_message(chat_id):
-                update.message.reply_text('The daily USD limit for GPT usage has been reached. Please try again later.')
-                return
-            elif not self.message_limit_handler.can_send_message(chat_id):
-                update.message.reply_text('The daily limit GPT usage has been reached. Please try again later.')
-                return
-
-            question = ' '.join(context.args)
-
-            # Create an event to stop the typing action when the response is received
-            stop_typing_event = threading.Event()
-
-            # Start a separate thread to send the typing action
-            typing_thread = threading.Thread(target=self.send_typing_action, args=(chat_id, stop_typing_event, context))
-            typing_thread.start()
-
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant, named Averiy (рус. Аверий)"},
-                    {"role": "user", "content": f"{question}\n\nAnswer:"}
-                ])
-            
-            tokens_used = response["usage"]["total_tokens"]
-            logging.info(f'{tokens_used} total tokens used.')
-            
-            # Register the message in the MessageLimitHandler
-            self.message_limit_handler.register_message(chat_id)
-            # Register the message in the FinancialValidator
-            self.financial_validator.register_tokens(chat_id, tokens_used)
-
-            if not self.financial_validator.is_spending_within_limit(chat_id):
-                self.notify_admins_limit_reached(chat_id, "USD", context)
-            elif not self.message_limit_handler.is_within_message_limit(chat_id):
-                self.notify_admins_limit_reached(chat_id, "messages", context)
-
-            # Set the event to stop the typing action
-            stop_typing_event.set()
-
-            answer_text = response.choices[0].message.content.strip()
-            update.message.reply_text(answer_text)
-        else:
-            update.message.reply_text('Please provide a question after the /gpt command.')
-
-    def notify_admins_limit_reached(self, chat_id: int, limit_type: str, context: CallbackContext):
-        if not self.admin_menu_manager.admin_notifications_enabled(chat_id):
-            return
-
-        dest_chat_id = self.admin_menu_manager.get_admin_notification_chat_id(chat_id)
-        if dest_chat_id:
-            message = f"The {limit_type} limit has been reached in chat ID {chat_id}."
-            self.updater.bot.send_message(chat_id=dest_chat_id, text=message)
-        else:
-            message = f"No destination chat ID to receive notifications from the current chat: {chat_id}"
-            logging.info(message)
+        update.message.reply_text(loc('greeting'), reply_markup=ReplyKeyboardRemove())
 
     def help_command(self, update: Update, context: CallbackContext):
-        help_text = '''Available commands:
-        /start - Start the bot
-        /gpt [question] - Get an answer from GPT-4
-        /help - Show this help message
-        /adminmenu - Access admin-only commands and settings
-        '''
+        # Check if the user is an admin
+        is_admin = self.input_handler.is_user_admin(update, context)
+
+        commands = self.admin_commands if is_admin else self.non_admin_commands
+
+        help_text = '\n'.join([f'/{cmd} - {loc(cmd)}' for cmd in commands])
+
+        help_text = f"{loc('available_commands')}:\n{help_text}"
         update.message.reply_text(help_text)
 
     def unknown_command(self, update: Update, context: CallbackContext):
-        update.message.reply_text('Unknown command. Type /help for a list of available commands.')
+        update.message.reply_text(loc('unknown_command'))
+        
+    def set_bot_commands_with_retry(self, commands, scope, retries=3, delay=5):
+        for attempt in range(retries):
+            try:
+                self.set_bot_commands(commands, scope)
+                return
+            except Exception:
+                if attempt < retries - 1:  # No need to sleep for the last attempt
+                    time.sleep(delay)
+                else:
+                    logging.error(f"Failed to set bot commands after {retries} attempts due to timeout.")
+                    return
+        
+    def set_bot_commands(self, commands, scope):
+        self.bot.set_my_commands(commands=commands, scope=scope)
+        
+    def setup_commands_methods(self):
+        self.commands_methods = {
+            'start': self.start,
+            'gpt': self.input_handler.gpt,
+            'help': self.help_command,
+            'adminmenu': self.input_handler.show_admin_menu,
+        }
+        
+    def update_commands(self):
+        
+         # Convert commands dictionaries to lists of BotCommand objects
+        non_admin_bot_commands = [BotCommand(cmd, loc(cmd)) for cmd in self.non_admin_commands]
+        admin_bot_commands = [BotCommand(cmd, loc(cmd)) for cmd in self.admin_commands]
+
+        # Set commands for non-admin users
+        default_scope = BotCommandScopeDefault(type='default')
+        self.set_bot_commands_with_retry(non_admin_bot_commands, default_scope)
+
+        # Set commands for admin users
+        admin_scope = BotCommandScopeAllChatAdministrators(type='all_chat_administrators')
+        self.set_bot_commands_with_retry(admin_bot_commands, admin_scope)
+        
+    def get_user_language(self, update: Update):
+        lang_code = update.effective_user.language_code
+        return lang_code
 
     def run(self):
         dp = self.updater.dispatcher
 
-        dp.add_handler(CommandHandler('start', self.start))
-        dp.add_handler(CommandHandler('gpt', self.gpt, pass_args=True))
-        dp.add_handler(CommandHandler('help', self.help_command))
-        dp.add_handler(CommandHandler('adminmenu', self.admin_menu_manager.show_admin_menu))
-        dp.add_handler(CallbackQueryHandler(self.admin_menu_manager.handle_admin_callback))
-        dp.add_handler(MessageHandler(Filters.command, self.unknown_command))
-        dp.add_handler(MessageHandler(Filters.text & (~Filters.command), self.admin_menu_manager.handle_text))
+        # Register the common command handler
+        dp.add_handler(MessageHandler(Filters.command, self.handle_command))
+        dp.add_handler(CallbackQueryHandler(self.input_handler.handle_admin_callback))
+        dp.add_handler(MessageHandler(Filters.text & (~Filters.command), self.input_handler.handle_text))
 
         self.updater.start_polling()
         self.updater.idle()

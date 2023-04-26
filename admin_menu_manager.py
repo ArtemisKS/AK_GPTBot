@@ -2,7 +2,9 @@ import re
 import logging
 from collections import namedtuple
 from telegram.ext import CallbackContext
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from telegram.error import Unauthorized
+from localization import loc
 
 class AdminMenuManager:
     """
@@ -18,7 +20,11 @@ class AdminMenuManager:
         "IS_TO_SET_NEW_LIMIT",
         "TOGGLE_NOTIFICATIONS",
         "ADD_CHAT_ID",
-        "GET_CHAT_ID"
+        "GET_CHAT_ID",
+        "GROUP_CHAT_ID",
+        "BOT_DESC",
+        "REMOVE_BOT_DESC",
+        "SHOW_BOT_DESC"
         ])
     FinancialConstants = namedtuple('FinancialConstants', [
         'SET_NEW_DOLLAR_LIMIT',
@@ -35,6 +41,8 @@ class AdminMenuManager:
         self.admin_notification_chat_map = {}
         self.silenced_notifications = {} # To track if admins notifications are active
         
+        self.bot_descriptions = {}
+        
         # Initialize constants
         self.constants = self.Constants(
             SET_NEW_LIMIT="set_new_limit",
@@ -44,7 +52,11 @@ class AdminMenuManager:
             IS_TO_SET_NEW_LIMIT="is_to_set_new_limit",
             TOGGLE_NOTIFICATIONS="toggle_notifications",
             ADD_CHAT_ID="add_chat_id",
-            GET_CHAT_ID="get_chat_id"
+            GET_CHAT_ID="get_chat_id",
+            GROUP_CHAT_ID="chat_id",
+            BOT_DESC="bot_description",
+            REMOVE_BOT_DESC="remove_bot_description",
+            SHOW_BOT_DESC="show_bot_description"
         )
 
         self.fin_constants = self.FinancialConstants(
@@ -60,158 +72,195 @@ class AdminMenuManager:
         return chat_member.status in ['administrator', 'creator']
         
     def show_admin_menu(self, update: Update, context: CallbackContext):
-        user_id = update.message.from_user.id if isinstance(update, Update) else update.from_user.id
-        chat_id = update.message.chat.id if isinstance(update, Update) else update.message.chat.id
-        message_method = update.message if isinstance(update, Update) else update.message
+        user_id = update.effective_user.id
+        chat_id = update.effective_chat.id
+        
+        self.display_admin_menu(user_id, chat_id, update, context)
+
+    def show_admin_menu_callback(self, query: CallbackQuery, context: CallbackContext, original_chat_id=None):
+        user_id = query.from_user.id
+        chat_id = original_chat_id if original_chat_id else query.message.chat.id
+        
+        self.display_admin_menu(user_id, chat_id, query, context)
+
+    def display_admin_menu(self, user_id: int, chat_id: int, update: Update, context: CallbackContext):
+        query = None
+        
+        if isinstance(update, CallbackQuery):
+            query = update
+        
+        context.user_data[user_id] = {self.constants.GROUP_CHAT_ID: chat_id}  # Store chat_id in context.user_data
 
         if self.is_user_admin(user_id, chat_id, context):
             keyboard = [
-            [InlineKeyboardButton("Set Messages Limit", callback_data=self.constants.SET_NEW_LIMIT),
-            InlineKeyboardButton("Set $ limit", callback_data=self.fin_constants.SET_NEW_DOLLAR_LIMIT)],
-            [InlineKeyboardButton("Show Messages Limit", callback_data=self.constants.SHOW_LIMIT),
-            InlineKeyboardButton("Show $ limit", callback_data=self.fin_constants.SHOW_DOLLAR_LIMIT)],
-            [InlineKeyboardButton("Remove Messages Limit", callback_data=self.constants.REMOVE_LIMIT),
-            InlineKeyboardButton("Remove $ limit", callback_data=self.fin_constants.REMOVE_DOLLAR_LIMIT)],
-            [InlineKeyboardButton("Messages Left", callback_data=self.constants.SHOW_REMAINING_MESSAGES),
-            InlineKeyboardButton("$ Left", callback_data=self.fin_constants.SHOW_REMAINING_DOLLARS)],
-            [InlineKeyboardButton("Add chat ID", callback_data=self.constants.ADD_CHAT_ID)],
-            [InlineKeyboardButton("Get current chat ID", callback_data=self.constants.GET_CHAT_ID)]
+                [InlineKeyboardButton(loc('set_messages_limit'), callback_data=self.constants.SET_NEW_LIMIT),
+                InlineKeyboardButton(loc('set_dollar_limit'), callback_data=self.fin_constants.SET_NEW_DOLLAR_LIMIT)],
+                [InlineKeyboardButton(loc('show_messages_limit'), callback_data=self.constants.SHOW_LIMIT),
+                InlineKeyboardButton(loc('show_dollar_limit'), callback_data=self.fin_constants.SHOW_DOLLAR_LIMIT)],
+                [InlineKeyboardButton(loc('remove_messages_limit'), callback_data=self.constants.REMOVE_LIMIT),
+                InlineKeyboardButton(loc('remove_dollar_limit'), callback_data=self.fin_constants.REMOVE_DOLLAR_LIMIT)],
+                [InlineKeyboardButton(loc('messages_left'), callback_data=self.constants.SHOW_REMAINING_MESSAGES),
+                InlineKeyboardButton(loc('dollars_left'), callback_data=self.fin_constants.SHOW_REMAINING_DOLLARS)],
+                [InlineKeyboardButton(loc('set_bot_description'), callback_data=self.constants.BOT_DESC),
+                 InlineKeyboardButton(loc('remove_bot_description'), callback_data=self.constants.REMOVE_BOT_DESC)],
+                [InlineKeyboardButton(loc('show_bot_description'), callback_data=self.constants.SHOW_BOT_DESC)],
+                [InlineKeyboardButton(loc('add_chat_id'), callback_data=self.constants.ADD_CHAT_ID)],
+                [InlineKeyboardButton(loc('get_current_chat_id'), callback_data=self.constants.GET_CHAT_ID)]
             ]
 
-            silence_button_text = "Mute notifications" if self.admin_notifications_enabled(chat_id) else "Unmute notifications"
+            silence_button_text = loc('mute_notifications') if self.admin_notifications_enabled(chat_id) else loc('unmute_notifications')
             keyboard.append([InlineKeyboardButton(silence_button_text, callback_data=self.constants.TOGGLE_NOTIFICATIONS)])
 
             reply_markup = InlineKeyboardMarkup(keyboard)
-            message_method.reply_text('Admin Menu:', reply_markup=reply_markup)
+
+            try:
+                context.bot.send_message(chat_id=user_id, text=f"{loc('admin_menu')}:", reply_markup=reply_markup)
+            except Unauthorized:
+                error_message = loc('start_conversation')
+                # Send an inline query answer if the bot can't initiate a conversation
+                if query:
+                    query.answer(error_message)
+                else:
+                    update.message.reply_text(error_message)
         else:
-            message_method.reply_text("Sorry, this menu is only available for admins.")
+            error_message = loc('admin_only')
+            if query:
+                query.answer(error_message)
+            else:
+                update.message.reply_text(error_message)
         
     def handle_admin_callback(self, update: Update, context: CallbackContext):
         query = update.callback_query
         user = query.from_user
-        chat = query.message.chat
         data = query.data
-
-        if self.is_user_admin(user.id, chat.id, context):
-            if data == self.constants.SET_NEW_LIMIT:
-                self.set_new_limit_callback(query, context)
-            elif data == self.constants.REMOVE_LIMIT:
-                self.remove_limit_callback(query, context)
-            elif data == self.constants.SHOW_LIMIT:
-                self.show_limit_callback(query, context)
-            elif data == self.constants.SHOW_REMAINING_MESSAGES:
-                self.show_remaining_messages_callback(query, context)
-            elif data == self.fin_constants.SET_NEW_DOLLAR_LIMIT:
-                self.set_new_usd_limit_callback(query, context)
-            elif data == self.fin_constants.REMOVE_DOLLAR_LIMIT:
-                self.remove_usd_limit_callback(query, context)
-            elif data == self.fin_constants.SHOW_DOLLAR_LIMIT:
-                self.show_usd_limit_callback(query, context)
-            elif data == self.fin_constants.SHOW_REMAINING_DOLLARS:
-                self.show_remaining_usd_callback(query, context)
-            elif data == self.constants.TOGGLE_NOTIFICATIONS:
-                self.toggle_admin_notifications(chat.id)
-                self.show_admin_menu(query, context)
-            elif data == self.constants.ADD_CHAT_ID:
-                self.handle_add_chat_id(query, context)
-            elif query.data == self.constants.GET_CHAT_ID:
-                self.get_current_chat_id_callback(query, context)
+        
+        if user.id in context.user_data and self.constants.GROUP_CHAT_ID in context.user_data[user.id]:
+            chat_id = context.user_data[user.id][self.constants.GROUP_CHAT_ID]  # Retrieve chat_id from context.user_data
         else:
-            query.answer("You must be an admin to use these functions.")
+            query.answer(loc('error_chat_id_not_found'))
+            return
 
-    def get_current_chat_id_callback(self, query, context: CallbackContext):
-        chat_id = query.message.chat_id
+        if self.is_user_admin(user.id, chat_id, context):
+            if data == self.constants.SET_NEW_LIMIT:
+                self.set_new_limit_callback(query, context, chat_id)
+            elif data == self.constants.REMOVE_LIMIT:
+                self.remove_limit_callback(query, context, chat_id)
+            elif data == self.constants.SHOW_LIMIT:
+                self.show_limit_callback(query, context, chat_id)
+            elif data == self.constants.SHOW_REMAINING_MESSAGES:
+                self.show_remaining_messages_callback(query, context, chat_id)
+            elif data == self.fin_constants.SET_NEW_DOLLAR_LIMIT:
+                self.set_new_usd_limit_callback(query, context, chat_id)
+            elif data == self.fin_constants.REMOVE_DOLLAR_LIMIT:
+                self.remove_usd_limit_callback(query, context, chat_id)
+            elif data == self.fin_constants.SHOW_DOLLAR_LIMIT:
+                self.show_usd_limit_callback(query, context, chat_id)
+            elif data == self.fin_constants.SHOW_REMAINING_DOLLARS:
+                self.show_remaining_usd_callback(query, context, chat_id)
+            elif data == self.constants.TOGGLE_NOTIFICATIONS:
+                self.toggle_admin_notifications(chat_id)
+                self.show_admin_menu_callback(query, context, original_chat_id=chat_id)
+            elif data == self.constants.ADD_CHAT_ID:
+                self.handle_add_chat_id(query, context, chat_id)
+            elif data == self.constants.GET_CHAT_ID:
+                self.get_current_chat_id_callback(query, context, chat_id)
+            elif data == self.constants.BOT_DESC:
+                self.set_new_bot_description_callback(query, context, chat_id)
+            elif data == self.constants.REMOVE_BOT_DESC:
+                self.remove_bot_description_callback(query, context, chat_id)
+            elif data == self.constants.SHOW_BOT_DESC:
+                self.show_bot_description_callback(query, context, chat_id)
+        else:
+            query.answer(loc('admin_required'))
+
+    def get_current_chat_id_callback(self, query, context: CallbackContext, chat_id: int):
         message = f"Current chat ID: {chat_id}"
         logging.info(message)
         query.answer(message)
 
-    def handle_add_chat_id(self, query, context: CallbackContext):
+    def handle_add_chat_id(self, query, context: CallbackContext, chat_id: int):
         user_id = query.from_user.id
-        chat_id = query.message.chat_id
 
         context.user_data[self.constants.ADD_CHAT_ID] = chat_id
         context.bot.send_message(
             chat_id=query.from_user.id,
-            text="Please enter chat id of the group from which you would like to receive notifications in this group."
+            text=loc('enter_dest_chat_id')
             )
 
-    def set_new_limit_callback(self, query, context: CallbackContext):
-        user_id = query.from_user.id
-        chat_id = query.message.chat_id
-
+    def set_new_limit_callback(self, query, context: CallbackContext, chat_id: int):
         context.user_data[self.constants.IS_TO_SET_NEW_LIMIT] = chat_id
-        context.bot.send_message(chat_id=query.from_user.id, text="Please enter the new message limit value as an integer.")
+        context.bot.send_message(chat_id=query.from_user.id, text=loc('enter_new_message_limit'))
 
-    def remove_limit_callback(self, query, context: CallbackContext):
-        chat_id = query.message.chat.id
-
+    def remove_limit_callback(self, query, context: CallbackContext, chat_id: int):
         if self.message_limit_handler.has_limit(chat_id):
             self.message_limit_handler.remove_limit(chat_id)
-            context.bot.send_message(chat_id=query.from_user.id, text="The bot's message limit for your chat has been removed.")
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('message_limit_removed'))
         else:
-            context.bot.send_message(chat_id=query.from_user.id, text="There is no message limit set for your chat.")
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('no_message_limit_set'))
 
-    def show_limit_callback(self, query, context: CallbackContext):
-        chat_id = query.message.chat.id
-
+    def show_limit_callback(self, query, context: CallbackContext, chat_id: int):
         if self.message_limit_handler.has_limit(chat_id):
             limit = self.message_limit_handler.get_limit(chat_id)
-            context.bot.send_message(chat_id=query.from_user.id, text=f"The bot's daily limit for your chat is set to {limit} messages.")
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('daily_message_limit', limit=limit))
         else:
-            context.bot.send_message(chat_id=query.from_user.id, text="There is no message limit set for your chat.")
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('no_message_limit_set'))
 
-    def show_remaining_messages_callback(self, query, context: CallbackContext):
-        chat_id = query.message.chat.id
-        
+    def show_remaining_messages_callback(self, query, context: CallbackContext, chat_id: int):
         if not self.message_limit_handler.has_limit(chat_id):
-            context.bot.send_message(chat_id=query.from_user.id, text="There is no limit on the remaining messages.")
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('no_remaining_message_limit'))
         else:
             remaining_messages = self.message_limit_handler.get_remaining_messages(chat_id)
-            context.bot.send_message(chat_id=query.from_user.id, text=f"There are {remaining_messages} messages left before the daily limit is reached.")
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('remaining_messages', remaining_messages=remaining_messages))
 
-    def set_new_usd_limit_callback(self, query, context: CallbackContext):
-        user_id = query.from_user.id
-        chat_id = query.message.chat_id
+    def set_new_usd_limit_callback(self, query, context: CallbackContext, chat_id: int):
+        context.user_data[self.fin_constants.IS_TO_SET_NEW_USD_LIMIT] = chat_id
+        context.bot.send_message(chat_id=query.from_user.id, text=loc('enter_new_usd_limit'))
 
-        if self.is_user_admin(user_id, chat_id, context):
-            context.user_data[self.fin_constants.IS_TO_SET_NEW_USD_LIMIT] = chat_id
-            context.bot.send_message(chat_id=query.from_user.id, text="Please enter the new USD limit value as an integer.")
-        else:
-            context.bot.send_message(chat_id=query.from_user.id, text="You must be an admin to change the bot's USD limit.")
-    
-    def remove_usd_limit_callback(self, query, context: CallbackContext):
-        chat_id = query.message.chat_id
+    def remove_usd_limit_callback(self, query, context: CallbackContext, chat_id: int):
         self.financial_validator.remove_limit(chat_id)
-        context.bot.send_message(chat_id=query.from_user.id, text="The bot's daily USD limit for your chat has been removed.")
-    
-    def show_usd_limit_callback(self, query, context: CallbackContext):
-        chat_id = query.message.chat_id
+        context.bot.send_message(chat_id=query.from_user.id, text=loc('daily_usd_limit_removed'))
+
+    def show_usd_limit_callback(self, query, context: CallbackContext, chat_id: int):
         limit = self.financial_validator.get_limit(chat_id)
         if limit is not None:
-            context.bot.send_message(chat_id=query.from_user.id, text=f"The bot's daily limit for your chat is {limit} USD.")
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('daily_usd_limit', limit=limit))
         else:
-            context.bot.send_message(chat_id=query.from_user.id, text="There is no daily USD limit set for your chat.")
-    
-    def show_remaining_usd_callback(self, query, context: CallbackContext):
-        chat_id = query.message.chat_id
-        remaining_dollars = self.financial_validator.left_dollar_usage(chat_id)
-    
-        if remaining_dollars == float("inf"):
-            message = "There is no USD limit for your chat."
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('no_daily_usd_limit_set'))
+
+    def show_remaining_usd_callback(self, query, context: CallbackContext, chat_id: int):
+        if not self.financial_validator.has_limit(chat_id):
+            message = loc('no_usd_limit')
         else:
-            message = f"The remaining spending limit for your chat is {int(remaining_dollars)} USD."
+            remaining_dollars = self.financial_validator.left_dollar_usage(chat_id)
+            message = loc('remaining_usd_limit', remaining_dollars=int(remaining_dollars))
 
         context.bot.send_message(chat_id=query.from_user.id, text=message)
         
+    def set_new_bot_description_callback(self, query, context: CallbackContext, chat_id: int):
+        context.user_data[self.constants.BOT_DESC] = chat_id
+        context.bot.send_message(chat_id=query.from_user.id, text=loc('enter_bot_description'))
+        
+    def remove_bot_description_callback(self, query, context: CallbackContext, chat_id: int):
+        if self.bot_descriptions.get(chat_id):
+            del self.bot_descriptions[chat_id]
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('bot_description_removed'))
+        else:
+            context.bot.send_message(chat_id=query.from_user.id, text=loc('no_custom_bot_description_set'))
+            
+    def show_bot_description_callback(self, query, context: CallbackContext, chat_id: int):
+        bot_description = self.get_bot_description(chat_id)
+        context.bot.send_message(chat_id=query.from_user.id, text=loc('bot_description', bot_description=bot_description))
+        
     def handle_text(self, update: Update, context: CallbackContext):
         user_data = context.user_data
-        new_limit_str = update.message.text
 
         is_to_set_new_limit = user_data.get(self.constants.IS_TO_SET_NEW_LIMIT)
         is_to_set_new_usd_limit = user_data.get(self.fin_constants.IS_TO_SET_NEW_USD_LIMIT)
         is_add_chat_id = user_data.get(self.constants.ADD_CHAT_ID)
+        is_set_bot_desc = user_data.get(self.constants.BOT_DESC)
 
         if is_to_set_new_limit or is_to_set_new_usd_limit:
+            new_limit_str = update.message.text
             if new_limit_str.isdigit():
                 new_limit = int(new_limit_str)
                 if is_to_set_new_limit:
@@ -219,13 +268,13 @@ class AdminMenuManager:
                 elif is_to_set_new_usd_limit:
                     self.set_new_limit(update, user_data, new_limit, is_usd=True)
             else:
-                update.message.reply_text("Please provide a valid integer value for the new limit.")
-            user_data[self.constants.IS_TO_SET_NEW_LIMIT] = None
-            user_data[self.fin_constants.IS_TO_SET_NEW_USD_LIMIT] = None
+                update.message.reply_text(loc('provide_valid_integer'))
+            del user_data[self.constants.IS_TO_SET_NEW_LIMIT]
+            del user_data[self.fin_constants.IS_TO_SET_NEW_USD_LIMIT]
         elif is_add_chat_id:
-            self.set_add_chat_id(update, context)
-        else:
-            update.message.reply_text('Please use a command. Type /help for a list of available commands.')
+            self.set_add_chat_id(update, user_data)
+        elif is_set_bot_desc:
+            self.save_bot_description(update, user_data)
     
     def set_new_limit(self, update: Update, user_data, new_limit, is_usd=False):
         if is_usd:
@@ -236,18 +285,23 @@ class AdminMenuManager:
     def set_new_usd_limit(self, update: Update, user_data, new_limit):
         chat_id = user_data[self.fin_constants.IS_TO_SET_NEW_USD_LIMIT]
         self.financial_validator.set_limit(chat_id, new_limit)
-        limit_msg = f"The bot's daily limit for your chat has been set to {new_limit} USD."
+        limit_msg = loc('daily_limit_set', new_limit=new_limit)
         update.message.reply_text(limit_msg)
-
             
     def set_new_message_limit(self, update: Update, user_data, new_limit):
         chat_id = user_data[self.constants.IS_TO_SET_NEW_LIMIT]
         self.message_limit_handler.set_limit(chat_id, new_limit)
-        limit_msg = f"The bot's daily message limit for your chat has been set to {new_limit}."
+        limit_msg = loc('daily_message_limit_set', new_limit=new_limit)
         update.message.reply_text(limit_msg)
         
-    def set_add_chat_id(self, update: Update, context: CallbackContext):
-        user_data = context.user_data
+    def save_bot_description(self, update: Update, user_data):
+        bot_desc = update.message.text
+        chat_id = user_data[self.constants.BOT_DESC]
+        self.bot_descriptions[chat_id] = bot_desc
+        del user_data[self.constants.BOT_DESC]
+        update.message.reply_text(loc('bot_description_set', bot_desc=bot_desc))
+        
+    def set_add_chat_id(self, update: Update, user_data):
         chat_id_str = update.message.text
 
         if re.match(r'^-?\d+$', chat_id_str):
@@ -260,12 +314,12 @@ class AdminMenuManager:
 
             # Compare the chat IDs
             if chat_id == dest_group_chat_id:
-                update.message.reply_text("The chat ID and the destination group chat ID cannot be the same.")
+                update.message.reply_text(loc('same_chat_id_error'))
             else:
                 self.admin_notification_chat_map[chat_id] = dest_group_chat_id
-                update.message.reply_text(f"Chat ID {dest_group_chat_id} will receive notifications from group chat {chat_id}.")
+                update.message.reply_text(loc('receive_notifications', dest_group_chat_id=dest_group_chat_id, chat_id=chat_id))
         else:
-            update.message.reply_text("Please provide a valid integer value for the chat ID.")
+            update.message.reply_text(loc('provide_valid_chat_id'))
         user_data[self.constants.ADD_CHAT_ID] = None
         
     def get_admin_notification_chat_id(self, chat_id: int):
@@ -279,3 +333,6 @@ class AdminMenuManager:
 
     def admin_notifications_enabled(self, chat_id: int) -> bool:
         return chat_id not in self.silenced_notifications
+
+    def get_bot_description(self, chat_id: int) -> str:
+        return self.bot_descriptions.get(chat_id) or loc('assistant_desc')
