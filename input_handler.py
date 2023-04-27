@@ -4,6 +4,8 @@ import threading
 from typing import List
 from telegram.ext import CallbackContext
 from telegram import Update, Message
+import asyncio
+from telegram.error import RetryAfter
 
 from admin_menu_manager import AdminMenuManager
 from financial_validator import FinancialValidator
@@ -89,6 +91,10 @@ class InputHandler:
         if self.stop_typing_event is None:
             return
         self.stop_typing_event.set()
+        
+    async def send_message_with_delay(self, context, chat_id, text, delay):
+        await asyncio.sleep(delay)
+        context.bot.send_message(chat_id=chat_id, text=text)
     
     def process_gpt_request(self, context: CallbackContext, message: Message, chat_id: int):
         self.chat_states[chat_id] = None  # Reset the chat state
@@ -124,7 +130,14 @@ class InputHandler:
         self.stop_typing()
 
         answer_text = response.choices[0].message.content.strip()
-        message.reply_text(answer_text)
+        try:
+            message.reply_text(answer_text)
+        except RetryAfter as e:
+            logging.warning(f"RetryAfter error, waiting {e.retry_after} seconds before sending message")
+            asyncio.ensure_future(self.send_message_with_delay(context, chat_id, answer_text, e.retry_after))
+        except Exception as e:
+            logging.error(f"An error occurred while sending the GPT response: {e}")
+            message.reply_text(loc('gpt_error_message'))
 
     def is_request_allowed(self, message: Message, chat_id: int) -> bool:
         if not self.financial_validator.can_send_message(chat_id):
