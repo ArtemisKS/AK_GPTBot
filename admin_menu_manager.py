@@ -242,7 +242,7 @@ class AdminMenuManager:
         
     def remove_bot_description_callback(self, query, context: CallbackContext, chat_id: int):
         if self.bot_descriptions.get(chat_id):
-            del self.bot_descriptions[chat_id]
+            self.bot_descriptions.pop(chat_id, None)
             context.bot.send_message(chat_id=query.from_user.id, text=loc('bot_description_removed'))
         else:
             context.bot.send_message(chat_id=query.from_user.id, text=loc('no_custom_bot_description_set'))
@@ -264,44 +264,46 @@ class AdminMenuManager:
             if new_limit_str.isdigit():
                 new_limit = int(new_limit_str)
                 if is_to_set_new_limit:
-                    self.set_new_limit(update, user_data, new_limit, is_usd=False)
+                    self.set_new_limit(update, context, user_data, new_limit, is_usd=False)
                 elif is_to_set_new_usd_limit:
-                    self.set_new_limit(update, user_data, new_limit, is_usd=True)
+                    self.set_new_limit(update, context, user_data, new_limit, is_usd=True)
             else:
-                update.message.reply_text(loc('provide_valid_integer'))
-            del user_data[self.constants.IS_TO_SET_NEW_LIMIT]
-            del user_data[self.fin_constants.IS_TO_SET_NEW_USD_LIMIT]
+                context.bot.send_message(chat_id=update.message.from_user.id, text=loc('provide_valid_integer'))
+            user_data.pop(self.constants.IS_TO_SET_NEW_LIMIT, None)
+            user_data.pop(self.fin_constants.IS_TO_SET_NEW_USD_LIMIT, None)
+
         elif is_add_chat_id:
-            self.set_add_chat_id(update, user_data)
+            self.set_add_chat_id(update, context, user_data)
         elif is_set_bot_desc:
-            self.save_bot_description(update, user_data)
+            self.save_bot_description(update, context, user_data)
     
-    def set_new_limit(self, update: Update, user_data, new_limit, is_usd=False):
+    def set_new_limit(self, update: Update, context: CallbackContext, user_data, new_limit, is_usd=False):
         if is_usd:
-            self.set_new_usd_limit(update, user_data, new_limit)
+            self.set_new_usd_limit(update, context, user_data, new_limit)
         else:
-            self.set_new_message_limit(update, user_data, new_limit)
+            self.set_new_message_limit(update, context, user_data, new_limit)
             
-    def set_new_usd_limit(self, update: Update, user_data, new_limit):
+    def set_new_usd_limit(self, update: Update, context: CallbackContext, user_data, new_limit):
         chat_id = user_data[self.fin_constants.IS_TO_SET_NEW_USD_LIMIT]
         self.financial_validator.set_limit(chat_id, new_limit)
         limit_msg = loc('daily_limit_set', new_limit=new_limit)
-        update.message.reply_text(limit_msg)
+        context.bot.send_message(chat_id=update.message.from_user.id, text=limit_msg)
             
-    def set_new_message_limit(self, update: Update, user_data, new_limit):
+    def set_new_message_limit(self, update: Update, context: CallbackContext, user_data, new_limit):
         chat_id = user_data[self.constants.IS_TO_SET_NEW_LIMIT]
         self.message_limit_handler.set_limit(chat_id, new_limit)
         limit_msg = loc('daily_message_limit_set', new_limit=new_limit)
-        update.message.reply_text(limit_msg)
+        context.bot.send_message(chat_id=update.message.from_user.id, text=limit_msg)
         
-    def save_bot_description(self, update: Update, user_data):
+    def save_bot_description(self, update: Update, context: CallbackContext, user_data):
         bot_desc = update.message.text
         chat_id = user_data[self.constants.BOT_DESC]
         self.bot_descriptions[chat_id] = bot_desc
-        del user_data[self.constants.BOT_DESC]
-        update.message.reply_text(loc('bot_description_set', bot_desc=bot_desc))
+        user_data.pop(self.constants.BOT_DESC, None)
+        message = loc('bot_description_set', bot_desc=bot_desc)
+        context.bot.send_message(chat_id=update.message.from_user.id, text=message)
         
-    def set_add_chat_id(self, update: Update, user_data):
+    def set_add_chat_id(self, update: Update, context: CallbackContext, user_data):
         chat_id_str = update.message.text
 
         if re.match(r'^-?\d+$', chat_id_str):
@@ -314,12 +316,13 @@ class AdminMenuManager:
 
             # Compare the chat IDs
             if chat_id == dest_group_chat_id:
-                update.message.reply_text(loc('same_chat_id_error'))
+                context.bot.send_message(chat_id=update.message.from_user.id, text=loc('same_chat_id_error'))
             else:
                 self.admin_notification_chat_map[chat_id] = dest_group_chat_id
-                update.message.reply_text(loc('receive_notifications', dest_group_chat_id=dest_group_chat_id, chat_id=chat_id))
+                reply = loc('receive_notifications', dest_group_chat_id=dest_group_chat_id, chat_id=chat_id)
+                context.bot.send_message(chat_id=update.message.from_user.id, text=reply)
         else:
-            update.message.reply_text(loc('provide_valid_chat_id'))
+            context.bot.send_message(chat_id=update.message.from_user.id, text=loc('provide_valid_chat_id'))
         user_data[self.constants.ADD_CHAT_ID] = None
         
     def get_admin_notification_chat_id(self, chat_id: int):
@@ -327,7 +330,7 @@ class AdminMenuManager:
     
     def toggle_admin_notifications(self, chat_id: int):
         if chat_id in self.silenced_notifications:
-            del self.silenced_notifications[chat_id]
+            self.silenced_notifications.pop(chat_id, None)
         else:
             self.silenced_notifications[chat_id] = True
 

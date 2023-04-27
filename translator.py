@@ -10,6 +10,8 @@ class Translator:
         self.translations = self.load_translations()
 
     def load_translations(self):
+        if self.language_code is None:
+            self.language_code = default_lang
         file_name = f"{self.language_code}.json"
         file_path = os.path.join("loc", file_name)
 

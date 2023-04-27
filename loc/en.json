@@ -43,7 +43,7 @@
     "daily_usd_limit": "The bot's daily limit for your chat is {limit} USD.",
     "no_daily_usd_limit_set": "There is no daily USD limit set for your chat.",
     "no_usd_limit": "There is no USD limit for your chat.",
-    "remaining_usd_limit": "The remaining spending limit for your chat is {int(remaining_dollars)} USD.",
+    "remaining_usd_limit": "The remaining spending limit for your chat is {remaining_dollars} USD.",
     "enter_bot_description": "Please enter bot's description (e.g. 'You are a scientific consultant and helpful assistant, named Ivan').",
     "bot_description_removed": "The bot's description for your chat has been removed.",
     "no_custom_bot_description_set": "The bot has no custom description set for your chat.",

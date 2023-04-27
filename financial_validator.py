@@ -9,7 +9,7 @@ class FinancialValidator:
         self.reset_times = {}
         self.dollar_limits = {}
         self.reset_interval = 24 * 60 * 60  # 24 hours in seconds
-        self.price_per_token = 0.2  # Price per token in USD
+        self.price_per_token = 0.002 / 1000  # Price per token in USD
 
     def set_limit(self, chat_id, limit):
         self.dollar_limits[chat_id] = limit
