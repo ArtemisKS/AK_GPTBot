@@ -35,6 +35,10 @@ class GPTBot:
         self.setup_commands_methods()
         
     def handle_command(self, update: Update, context: CallbackContext):
+        if update.message is None or update.message.text is None:
+            # Send a message to the user that the bot only processes text messages
+            context.bot.send_message(chat_id=update.effective_chat.id, text=loc('only_text_messages'))
+            return
         command_with_args = update.message.text.split()
         full_command = command_with_args[0][1:]  # Extract the command without the leading '/'
         command = full_command.split('@')[0]  # Remove the bot's username if it's present
@@ -60,7 +64,7 @@ class GPTBot:
             else:
                 self.commands_methods[command](update, context)
         else:
-            self.unknown_command(update, context)
+            self.unknown_command(update)
 
 
     def start(self, update: Update, context: CallbackContext):
@@ -77,7 +81,7 @@ class GPTBot:
         help_text = f"{loc('available_commands')}:\n{help_text}"
         update.message.reply_text(help_text)
 
-    def unknown_command(self, update: Update, context: CallbackContext):
+    def unknown_command(self, update: Update):
         update.message.reply_text(loc('unknown_command'))
         
     def set_bot_commands_with_retry(self, commands, scope, retries=3, delay=5):
@@ -135,7 +139,7 @@ class GPTBot:
 
 # Set your API keys as environment variables
 TELEGRAM_API_KEY = '6233026479:AAHXouIRHy2fpQZdih6xchzDrIphxViUQbY' #os.getenv('TELEGRAM_API_KEY')
-GPT_API_KEY = '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' #os.getenv('GPT_API_KEY')
+GPT_API_KEY = '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' #os.getenv('GPT_API_KEY')
 
 if __name__ == '__main__':
     gpt_bot = GPTBot(TELEGRAM_API_KEY, GPT_API_KEY)

@@ -89,3 +89,7 @@ class FinancialValidator:
             return True
 
         return False
+    
+    def calculate_usd(self, tokens: int) -> float:
+        return tokens * self.price_per_token
+    

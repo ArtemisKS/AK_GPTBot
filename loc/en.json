@@ -57,5 +57,6 @@
     "provide_valid_chat_id": "Please provide a valid integer value for the chat ID.",
     "assistant_desc": "You are a helpful assistant, named Averiy",
     "model_overloaded": "The model is currently overloaded with other requests. Please try again later.",
-    "gpt_error_message": "An error occurred while processing your request. Please try again later."
+    "gpt_error_message": "An error occurred while processing your request. Please try again later.",
+    "only_text_messages": "Sorry, I can only process text messages."
 }

@@ -6,6 +6,8 @@ from telegram.ext import CallbackContext
 from telegram import Update, Message
 
 from admin_menu_manager import AdminMenuManager
+from financial_validator import FinancialValidator
+from message_limit_handler import MessageLimitHandler
 from translator import Translator
 from localization import loc
 
@@ -15,14 +17,16 @@ class InputHandler:
     """
     def __init__(self, message_limit_handler, financial_validator, updater):
         self.chat_states = {}  # Add this line
-        self.message_limit_handler = message_limit_handler
-        self.financial_validator = financial_validator
+        self.message_limit_handler: MessageLimitHandler = message_limit_handler
+        self.financial_validator: FinancialValidator = financial_validator
         self.updater = updater
         self.translator = Translator()
         self.admin_menu_manager = AdminMenuManager(message_limit_handler, financial_validator)
         
         # Create an event to stop the typing action when the response is received
         self.stop_typing_event: threading.Event = None
+        
+        self.total_tokens_used = 0
         
     def admin_notifications_enabled(self, chat_id: int) -> bool:
         self.admin_menu_manager.admin_notifications_enabled(chat_id)
@@ -133,7 +137,8 @@ class InputHandler:
 
     def handle_gpt_response(self, chat_id: int, context: CallbackContext, response):
         tokens_used = response["usage"]["total_tokens"]
-        logging.info(f'{tokens_used} total tokens used.')
+        self.total_tokens_used += int(tokens_used)
+        logging.info(f'{tokens_used} tokens used; {self.total_tokens_used} total tokens used (since bot launch) == {self.financial_validator.calculate_usd(self.total_tokens_used)}$')
 
         # Register the message in the MessageLimitHandler
         self.message_limit_handler.register_message(chat_id)
@@ -144,7 +149,6 @@ class InputHandler:
             self.notify_admins_limit_reached(chat_id, "USD", context)
         elif not self.message_limit_handler.is_within_message_limit(chat_id):
             self.notify_admins_limit_reached(chat_id, "messages", context)
-
     
     def gpt(self, update: Update, context: CallbackContext, args: List[str]):
         if args and len(args) > 0:
