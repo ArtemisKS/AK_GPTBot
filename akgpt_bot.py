@@ -1,7 +1,7 @@
 import openai
 import logging
 import time
-from telegram import Update, ReplyKeyboardRemove, BotCommandScopeDefault, BotCommandScopeAllChatAdministrators, Bot, BotCommand
+from telegram import Update, ReplyKeyboardRemove, BotCommandScopeDefault, BotCommandScopeAllChatAdministrators, Bot, BotCommand, error
 from telegram.ext import (
     Updater,
     CallbackQueryHandler,
@@ -34,6 +34,17 @@ class GPTBot:
         
         self.setup_commands_methods()
         
+    def handle_retry_after(self, update: Update, context: CallbackContext):
+        try:
+            raise context.error
+        except error.RetryAfter as e:
+            logging.warning(f"Caught RetryAfter error: {e}, waiting for {e.retry_after} seconds before retrying.")
+            # Optional: Send a warning message to the user
+            reply = loc('flood_control', seconds=e.retry_after)
+            context.bot.send_message(chat_id=update.effective_chat.id, text=reply)
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
+        
     def handle_command(self, update: Update, context: CallbackContext):
         if update.message is None or update.message.text is None:
             # Send a message to the user that the bot only processes text messages
@@ -65,7 +76,6 @@ class GPTBot:
                 self.commands_methods[command](update, context)
         else:
             self.unknown_command(update)
-
 
     def start(self, update: Update, context: CallbackContext):
         update.message.reply_text(loc('greeting'), reply_markup=ReplyKeyboardRemove())
@@ -132,14 +142,15 @@ class GPTBot:
         dp.add_handler(MessageHandler(Filters.command, self.handle_command))
         dp.add_handler(CallbackQueryHandler(self.input_handler.handle_admin_callback))
         dp.add_handler(MessageHandler(Filters.text & (~Filters.command), self.input_handler.handle_text))
+        dp.add_error_handler(self.handle_retry_after)
 
         self.updater.start_polling()
         self.updater.idle()
 
 
 # Set your API keys as environment variables
-TELEGRAM_API_KEY = '6233026479:AAHXouIRHy2fpQZdih6xchzDrIphxViUQbY' #os.getenv('TELEGRAM_API_KEY')
-GPT_API_KEY = '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' #os.getenv('GPT_API_KEY')
+TELEGRAM_API_KEY = 'tg_api_key' #os.getenv('TELEGRAM_API_KEY')
+GPT_API_KEY = 'gpt_api_key' #os.getenv('GPT_API_KEY')
 
 if __name__ == '__main__':
     gpt_bot = GPTBot(TELEGRAM_API_KEY, GPT_API_KEY)
