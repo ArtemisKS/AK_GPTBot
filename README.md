@@ -10,12 +10,12 @@ AK_GPTBot is a highly advanced Telegram bot powered by OpenAI's GPT-3.5/GPT-4. I
 ### User Capabilities
 
 1. **Interactive Conversations**: User can engage in fluid and natural conversations with the bot, getting responses in real time.
-2. **Universality**: Communicate with the bot in various modes - in personal mode, as well as within a group.
+2. **Universality**: Communicate with the bot in various modes - in personal mode, as well as within a group chat.
 
 ### Admin Panel
 
-1. **Usage Moderation**: Flexible configuration of users' comminucation with the bot.
-3. **Robust limits setup**: Limit bot's usage based on different factors, setup notifications if needed.
+1. **Usage Moderation**: Flexible configuration of users' comminucation with the bot - meant to be used in the context of a group.
+3. **Robust limits setup**: Limit bot's usage based on different factors, setup notifications if needed. Also intended for group usage, can be very important in case of a large group chat.
 4. **Customization**: Customize the bot's functionalities (its main purpose and specialisation).
 
 ## Screenshots
@@ -30,9 +30,9 @@ AK_GPTBot is a highly advanced Telegram bot powered by OpenAI's GPT-3.5/GPT-4. I
 To deploy the AK_GPTBot, follow the steps outlined below:
 
 1. **Clone the Repository**: Use the following command to clone the repository to your local machine: `git clone https://github.com/ArtemisKS/AK_GPTBot.git`
-2. **Install Dependencies**: Navigate to the project directory and install the necessary dependencies using the following command: `pip install -r requirements.txt`
+2. **Install Dependencies**: Navigate to the project directory and install the necessary dependencies from the `requirements.txt` file.
 3. **Setup Environment**: Before running the bot, make sure to set up the necessary environment variables. Refer to the documentation for guidance on how to configure these variables appropriately.
-4. **Run the Bot**: Now, you are ready to run the bot. Use the following command to start the bot: `python akgpt_bot.py`
+4. **Run the Bot**: Now, you are ready to run the bot. Use the following command to start the bot: `python3 akgpt_bot.py`
 5. **Testing the Deployment**: After deploying, ensure to test the bot to confirm that it is working as expected. You can do this by interacting with the bot through the user interface.
 
 ## License
