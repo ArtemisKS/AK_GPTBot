@@ -20,11 +20,10 @@ AK_GPTBot is a highly advanced Telegram bot powered by OpenAI's GPT-3.5/GPT-4. I
 
 ## Screenshots
 
-- Main Interface
-  ![Main Interface](http://path.to/your/screenshot1.png)
-  
-- Admin Panel
-  ![Admin Panel](http://path.to/your/screenshot2.png)
+| 1on1 chat | Admin Menu | Group chat |
+|-|-|-|
+| <img src="https://github.com/ArtemisKS/AK_GPTBot/assets/35403190/1907d6ae-e15c-4463-a658-4cf94b94e01f" width="300"> | <img src="https://github.com/ArtemisKS/AK_GPTBot/assets/35403190/1223bd01-f594-4cda-829f-6f97f968e368" width="300"> | <img src="https://github.com/ArtemisKS/AK_GPTBot/assets/35403190/e86936aa-bbdc-4daf-b876-0f4f4310f440" width="300"> |
+
 
 ## Deployment
 
